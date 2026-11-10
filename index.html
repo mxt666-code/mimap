@@ -48,6 +48,8 @@ let currentPosition = null;
 let currentSpeed = 0;
 let routeSteps = [];
 let activeStepIndex = 0;
+let offRouteCount = 0;
+let wasOffRoute = false;
 
 let speedWatchId = null;
 function startLiveSpeed() {
@@ -111,6 +113,48 @@ function metersBetween(a, b) {
   return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
+function gpsToRouteCoords(lon, lat) {
+  if (lon < 72.004 || lon > 137.8347 || lat < 0.8293 || lat > 55.8271) {
+    return { lon, lat };
+  }
+  const a = 6378245.0;
+  const ee = 0.00669342162296594323;
+  const transformLat = (x, y) => {
+    let value = -100 + 2*x + 3*y + 0.2*y*y + 0.1*x*y + 0.2*Math.sqrt(Math.abs(x));
+    value += (20*Math.sin(6*x*Math.PI) + 20*Math.sin(2*x*Math.PI))*2/3;
+    value += (20*Math.sin(y*Math.PI) + 40*Math.sin(y/3*Math.PI))*2/3;
+    value += (160*Math.sin(y/12*Math.PI) + 320*Math.sin(y*Math.PI/30))*2/3;
+    return value;
+  };
+  const transformLon = (x, y) => {
+    let value = 300 + x + 2*y + 0.1*x*x + 0.1*x*y + 0.1*Math.sqrt(Math.abs(x));
+    value += (20*Math.sin(6*x*Math.PI) + 20*Math.sin(2*x*Math.PI))*2/3;
+    value += (20*Math.sin(x*Math.PI) + 40*Math.sin(x/3*Math.PI))*2/3;
+    value += (150*Math.sin(x/12*Math.PI) + 300*Math.sin(x/30*Math.PI))*2/3;
+    return value;
+  };
+  let dLat = transformLat(lon - 105, lat - 35);
+  let dLon = transformLon(lon - 105, lat - 35);
+  const radLat = lat * Math.PI / 180;
+  let magic = Math.sin(radLat);
+  magic = 1 - ee * magic * magic;
+  const sqrtMagic = Math.sqrt(magic);
+  dLat = dLat * 180 / ((a * (1 - ee)) / (magic * sqrtMagic) * Math.PI);
+  dLon = dLon * 180 / (a / sqrtMagic * Math.cos(radLat) * Math.PI);
+  return { lon: lon + dLon, lat: lat + dLat };
+}
+
+function nearestRouteDistance(position) {
+  const here = gpsToRouteCoords(position.coords.longitude, position.coords.latitude);
+  let nearest = Infinity;
+  for (const step of routeSteps) {
+    for (const point of stepPoints(step)) {
+      nearest = Math.min(nearest, metersBetween(here, point));
+    }
+  }
+  return nearest;
+}
+
 function stepPoints(step) {
   return String(step.polyline || "").split(";").map(pair => {
     const parts = pair.split(",");
@@ -120,7 +164,21 @@ function stepPoints(step) {
 
 function updateRouteProgress(position) {
   if (!routeSteps.length) return;
-  const here = { lon: position.coords.longitude, lat: position.coords.latitude };
+  const routeDistance = nearestRouteDistance(position);
+  if (routeDistance > 100) {
+    offRouteCount++;
+    if (offRouteCount >= 3 && !wasOffRoute) {
+      wasOffRoute = true;
+      showStatus("⚠️ 检测到你可能偏离路线（约 " + Math.round(routeDistance) + " 米），请注意核对导航。", true);
+    }
+  } else {
+    offRouteCount = 0;
+    if (wasOffRoute && routeDistance < 50) {
+      wasOffRoute = false;
+      showStatus("已回到规划路线，继续导航。");
+    }
+  }
+  const here = gpsToRouteCoords(position.coords.longitude, position.coords.latitude);
   let bestIndex = activeStepIndex;
   let bestDistance = Infinity;
   const last = Math.min(routeSteps.length - 1, activeStepIndex + 4);
@@ -235,6 +293,8 @@ async function planRoute() {
     const seconds = Number(path.duration);
     routeSteps = path.steps || [];
     activeStepIndex = 0;
+    offRouteCount = 0;
+    wasOffRoute = false;
     renderActiveStep();
 
     showStatus("路线规划成功：" + (geo.geocodes[0].formatted_address || address) +
