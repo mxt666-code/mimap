@@ -47,6 +47,21 @@ const $ = id => document.getElementById(id);
 let currentPosition = null;
 let currentSpeed = 0;
 
+let speedWatchId = null;
+function startLiveSpeed() {
+  if (!navigator.geolocation || speedWatchId !== null) return;
+  speedWatchId = navigator.geolocation.watchPosition(
+    position => {
+      currentPosition = position;
+      updateSpeed(position);
+    },
+    error => {
+      console.warn("GPS 实时速度读取失败：", error.message);
+    },
+    { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
+  );
+}
+
 function showStatus(message, error = false) {
   $("status").textContent = message;
   $("status").style.color = error ? "#ff9b9b" : "#4bd9a4";
