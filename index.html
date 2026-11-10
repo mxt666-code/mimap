@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#08111d">
+<link rel="manifest" href="manifest.webmanifest">
+<title>MiMap 导航</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#08111d;color:#f5f8fc;font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif}
+main{max-width:520px;margin:auto;min-height:100vh;padding:calc(18px + env(safe-area-inset-top)) 18px calc(20px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:18px}
+header{display:flex;justify-content:space-between;align-items:center}h1{font-size:25px;margin:0}.tag{font-size:11px;color:#50d9a5;border:1px solid #286b57;border-radius:20px;padding:6px 10px}
+.screen{background:#02070c;border:1px solid #25364a;border-radius:30px;padding:22px 18px;min-height:440px;display:flex;flex-direction:column;box-shadow:0 20px 50px #0008}
+.metrics{display:flex;justify-content:space-between}.metric small{display:block;color:#91a2b8;font-size:12px}.metric strong{font-size:20px}.right{text-align:right}
+.arrow{flex:1;display:grid;place-items:center;color:#4bd9a4;font-size:150px;font-weight:800;text-shadow:0 0 25px #4bd9a455}
+.eta{text-align:center}.eta small{display:block;color:#91a2b8;font-size:12px}.eta strong{font-size:30px}.instruction{text-align:center;color:#b7c6d8;margin-top:7px}
+.panel{background:#142235;border:1px solid #293c54;border-radius:18px;padding:16px}.panel h2{font-size:16px;margin:0 0 12px}
+label{display:block;color:#aebed0;font-size:12px;margin:10px 0 5px}input,select{width:100%;padding:11px;border-radius:10px;border:1px solid #40536c;background:#091321;color:white;font:inherit}
+button{border:0;border-radius:11px;padding:13px;font-weight:700;font-size:15px;background:#4bd9a4;color:#052116;width:100%;margin-top:12px}
+.secondary{background:#2b4059;color:white}.hint{font-size:12px;color:#93a5ba;line-height:1.55}
+#status{font-size:12px;color:#4bd9a4;margin-top:10px}
+</style>
+</head>
+<body><main>
+<header><h1>MiMap</h1><span class="tag">Windows / iPhone 网页版</span></header>
+<section class="screen">
+ <div class="metrics">
+  <div class="metric"><small>剩余路程</small><strong id="distance">850 m</strong></div>
+  <div class="metric right"><small>当前速度</small><strong id="speed">-- km/h</strong></div>
+ </div>
+ <div class="arrow" id="arrow">↑</div>
+ <div class="eta"><small>预计到达</small><strong id="eta">--:--</strong><div class="instruction" id="instruction">等待导航数据</div></div>
+</section>
+<section class="panel">
+ <h2>本地演示数据</h2>
+ <label>转向</label><select id="turn"><option value="↑|直行">直行</option><option value="↗|右前方">右前方</option><option value="→|右转">右转</option><option value="←|左转">左转</option><option value="↓|掉头">掉头</option></select>
+ <label>剩余路程（米）</label><input id="meters" type="number" value="850" min="0">
+ <label>速度（km/h）</label><input id="kmh" type="number" value="18" min="0">
+ <button id="update">更新导航预览</button><button class="secondary" id="locate">读取手机当前位置</button>
+ <div id="status">状态：演示模式。尚未接入高德实时路线。</div>
+</section>
+<p class="hint">说明：这是可在 iPhone Safari 和 Windows 浏览器打开的 PWA 起步版。网页可读取定位（需授权），但 iOS Safari 不支持网页直接使用 BLE GATT 与手环通信；若要连接 9 Pro，仍需原生 iOS App 或其他受支持的桥接方式。</p>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+function render(){
+ const m=Math.max(0,Number($('meters').value)||0),v=Math.max(0,Number($('kmh').value)||0);
+ $('distance').textContent=m>=1000?(m/1000).toFixed(1)+' km':Math.round(m)+' m';
+ $('speed').textContent=v.toFixed(0)+' km/h';
+ const [a,t]=$('turn').value.split('|');$('arrow').textContent=a;$('instruction').textContent=t;
+ const mins=v>0?(m/1000)/v*60:0,eta=new Date(Date.now()+mins*60000);
+ $('eta').textContent=v>0?eta.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}):'--:--';
+ $('status').textContent='状态：预览已更新（模拟数据）';
+}
+$('update').onclick=render;
+$('locate').onclick=()=>{
+ if(!navigator.geolocation){$('status').textContent='此浏览器不支持定位';return}
+ $('status').textContent='正在请求定位权限…';
+ navigator.geolocation.getCurrentPosition(p=>{
+  $('status').textContent='已取得定位：'+p.coords.latitude.toFixed(5)+', '+p.coords.longitude.toFixed(5)+'；尚未计算路线。';
+  if(p.coords.speed!=null&&p.coords.speed>=0)$('kmh').value=(p.coords.speed*3.6).toFixed(1);
+  render();
+ },e=>$('status').textContent='定位失败：'+e.message,{enableHighAccuracy:true,timeout:12000});
+};
+render();
+if('serviceWorker' in navigator && location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
+</script></body></html>

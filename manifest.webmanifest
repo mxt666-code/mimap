@@ -1,0 +1,9 @@
+{
+  "name": "MiMap 导航",
+  "short_name": "MiMap",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#08111d",
+  "theme_color": "#08111d",
+  "lang": "zh-CN"
+}
