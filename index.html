@@ -167,6 +167,7 @@ async function planRoute() {
 }
 
 $("route").addEventListener("click", planRoute);
+startLiveSpeed();
 $("locate").addEventListener("click", async () => {
   showStatus("正在读取手机 GPS…");
   try {
