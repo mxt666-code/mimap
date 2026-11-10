@@ -50,6 +50,8 @@ let routeSteps = [];
 let activeStepIndex = 0;
 let offRouteCount = 0;
 let wasOffRoute = false;
+let destinationCoords = null;
+let rerouteInProgress = false;
 let destinationPoint = null;
 let hasArrived = false;
 
@@ -177,6 +179,35 @@ function stepPoints(step) {
   }).filter(point => Number.isFinite(point.lon) && Number.isFinite(point.lat));
 }
 
+async function rerouteRoute(position) {
+  if (rerouteInProgress || !destinationCoords) return;
+  rerouteInProgress = true;
+  try {
+    const origin = position.coords.longitude + "," + position.coords.latitude;
+    const url = API + "/api/driving?origin=" +
+      encodeURIComponent(origin) + "&destination=" +
+      encodeURIComponent(destinationCoords);
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("路线接口 HTTP " + response.status);
+    const data = await response.json();
+    if (data.status !== "1" || !data.route || !data.route.paths || !data.route.paths.length) {
+      throw new Error(data.info || "未找到可用的新路线");
+    }
+    const path = data.route.paths[0];
+    routeSteps = path.steps || [];
+    activeStepIndex = 0;
+    offRouteCount = 0;
+    wasOffRoute = false;
+    currentPosition = position;
+    renderActiveStep();
+    showStatus("已根据当前位置重新规划路线，请按新箭头行驶。");
+  } catch (error) {
+    showStatus("偏航后自动重规划失败：" + (error.message || "请手动重新规划"), true);
+  } finally {
+    rerouteInProgress = false;
+  }
+}
+
 function updateRouteProgress(position) {
   if (!routeSteps.length) return;
   checkArrival(position);
@@ -186,7 +217,8 @@ function updateRouteProgress(position) {
     offRouteCount++;
     if (offRouteCount >= 3 && !wasOffRoute) {
       wasOffRoute = true;
-      showStatus("⚠️ 检测到你可能偏离路线（约 " + Math.round(routeDistance) + " 米），请注意核对导航。", true);
+      showStatus("⚠️ 检测到你可能偏离路线，正在尝试重新规划…", true);
+      rerouteRoute(position);
     }
   } else {
     offRouteCount = 0;
