@@ -323,6 +323,7 @@ async function planRoute() {
     }
 
     const destination = geo.geocodes[0].location;
+    destinationCoords = destination;
     const destinationParts = destination.split(",").map(Number);
     destinationPoint = {
       lon: destinationParts[0],
