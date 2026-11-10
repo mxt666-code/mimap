@@ -25,7 +25,7 @@ button{border:0;border-radius:11px;padding:13px;font-weight:700;font-size:15px;b
 <header><h1>MiMap</h1><span class="tag">高德路线测试版</span></header>
 <section class="screen">
  <div class="metrics">
-  <div class="metric"><small>路线总路程</small><strong id="distance">等待规划</strong></div>
+  <div class="metric"><small>剩余路程</small><strong id="distance">等待规划</strong></div>
   <div class="metric right"><small>当前速度</small><strong id="speed">-- km/h</strong></div>
  </div>
  <div class="arrow" id="arrow">↑</div>
@@ -39,13 +39,15 @@ button{border:0;border-radius:11px;padding:13px;font-weight:700;font-size:15px;b
  <button class="secondary" id="locate">读取手机当前位置</button>
  <div id="status">状态：已连接高德地址解析和驾车路线接口。</div>
 </section>
-<p class="hint">提示：请允许浏览器使用精确定位。当前版本可获取 GPS 位置并规划驾车路线；路线进度和手环同步功能仍在后续开发中。iPhone 网页不能直接连接小米手环 9 Pro。</p>
+<p class="hint">提示：请允许浏览器使用精确定位。当前版本可获取 GPS 位置、实时速度并根据位置更新转向步骤；手环同步功能仍在后续开发中。iPhone 网页不能直接连接小米手环 9 Pro。</p>
 </main>
 <script>
 const API = "https://mimap-api.v758gg67yf.workers.dev";
 const $ = id => document.getElementById(id);
 let currentPosition = null;
 let currentSpeed = 0;
+let routeSteps = [];
+let activeStepIndex = 0;
 
 let speedWatchId = null;
 function startLiveSpeed() {
@@ -54,6 +56,7 @@ function startLiveSpeed() {
     position => {
       currentPosition = position;
       updateSpeed(position);
+      updateRouteProgress(position);
     },
     error => {
       console.warn("GPS 实时速度读取失败：", error.message);
@@ -96,6 +99,66 @@ function updateSpeed(position) {
     currentSpeed = speed * 3.6;
   }
   $("speed").textContent = currentSpeed.toFixed(0) + " km/h";
+}
+
+function metersBetween(a, b) {
+  const rad = value => value * Math.PI / 180;
+  const dLat = rad(b.lat - a.lat);
+  const dLon = rad(b.lon - a.lon);
+  const lat1 = rad(a.lat), lat2 = rad(b.lat);
+  const h = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+function stepPoints(step) {
+  return String(step.polyline || "").split(";").map(pair => {
+    const parts = pair.split(",");
+    return { lon: Number(parts[0]), lat: Number(parts[1]) };
+  }).filter(point => Number.isFinite(point.lon) && Number.isFinite(point.lat));
+}
+
+function updateRouteProgress(position) {
+  if (!routeSteps.length) return;
+  const here = { lon: position.coords.longitude, lat: position.coords.latitude };
+  let bestIndex = activeStepIndex;
+  let bestDistance = Infinity;
+  const last = Math.min(routeSteps.length - 1, activeStepIndex + 4);
+
+  for (let i = activeStepIndex; i <= last; i++) {
+    const points = stepPoints(routeSteps[i]);
+    for (const point of points) {
+      const distance = metersBetween(here, point);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = i;
+      }
+    }
+  }
+
+  if (bestDistance < 80 && bestIndex > activeStepIndex) {
+    activeStepIndex = bestIndex;
+  }
+  renderActiveStep();
+}
+
+function renderActiveStep() {
+  if (!routeSteps.length) return;
+  const step = routeSteps[activeStepIndex] || {};
+  const remainingMeters = routeSteps.slice(activeStepIndex)
+    .reduce((sum, item) => sum + (Number(item.distance) || 0), 0);
+  const remainingSeconds = routeSteps.slice(activeStepIndex)
+    .reduce((sum, item) => sum + (Number(item.duration) || 0), 0);
+
+  $("distance").textContent = remainingMeters >= 1000
+    ? (remainingMeters / 1000).toFixed(1) + " km"
+    : Math.round(remainingMeters) + " m";
+  $("arrow").textContent = directionFromStep(step);
+  $("instruction").textContent = step.instruction || "沿路线行驶";
+  const eta = new Date(Date.now() + remainingSeconds * 1000);
+  $("eta").textContent = eta.toLocaleTimeString("zh-CN", {
+    hour: "2-digit", minute: "2-digit"
+  });
 }
 
 async function planRoute() {
@@ -142,18 +205,9 @@ async function planRoute() {
     const path = data.route.paths[0];
     const meters = Number(path.distance);
     const seconds = Number(path.duration);
-    const steps = path.steps || [];
-    const firstStep = steps[0] || {};
-
-    $("distance").textContent = meters >= 1000
-      ? (meters / 1000).toFixed(1) + " km"
-      : Math.round(meters) + " m";
-    $("arrow").textContent = directionFromStep(firstStep);
-    $("instruction").textContent = firstStep.instruction || "沿路线行驶";
-    const eta = new Date(Date.now() + seconds * 1000);
-    $("eta").textContent = eta.toLocaleTimeString("zh-CN", {
-      hour: "2-digit", minute: "2-digit"
-    });
+    routeSteps = path.steps || [];
+    activeStepIndex = 0;
+    renderActiveStep();
 
     showStatus("路线规划成功：" + (geo.geocodes[0].formatted_address || address) +
       "。全程约 " + Math.round(meters) + " 米，预计 " +
