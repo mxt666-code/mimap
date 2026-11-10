@@ -50,6 +50,8 @@ let routeSteps = [];
 let activeStepIndex = 0;
 let offRouteCount = 0;
 let wasOffRoute = false;
+let destinationPoint = null;
+let hasArrived = false;
 
 let speedWatchId = null;
 function startLiveSpeed() {
@@ -155,6 +157,19 @@ function nearestRouteDistance(position) {
   return nearest;
 }
 
+function checkArrival(position) {
+  if (!destinationPoint || hasArrived) return;
+  const here = gpsToRouteCoords(position.coords.longitude, position.coords.latitude);
+  const distance = metersBetween(here, destinationPoint);
+  if (distance <= 50) {
+    hasArrived = true;
+    $("arrow").textContent = "✓";
+    $("instruction").textContent = "已到达目的地";
+    $("distance").textContent = "0 m";
+    showStatus("🎉 已到达目的地：" + (destinationPoint.name || "导航终点"));
+  }
+}
+
 function stepPoints(step) {
   return String(step.polyline || "").split(";").map(pair => {
     const parts = pair.split(",");
@@ -164,6 +179,8 @@ function stepPoints(step) {
 
 function updateRouteProgress(position) {
   if (!routeSteps.length) return;
+  checkArrival(position);
+  if (hasArrived) return;
   const routeDistance = nearestRouteDistance(position);
   if (routeDistance > 100) {
     offRouteCount++;
@@ -274,6 +291,13 @@ async function planRoute() {
     }
 
     const destination = geo.geocodes[0].location;
+    const destinationParts = destination.split(",").map(Number);
+    destinationPoint = {
+      lon: destinationParts[0],
+      lat: destinationParts[1],
+      name: geo.geocodes[0].formatted_address || address
+    };
+    hasArrived = false;
     const origin = position.coords.longitude + "," + position.coords.latitude;
 
     showStatus("目的地已找到，正在计算驾车路线…");
@@ -295,6 +319,7 @@ async function planRoute() {
     activeStepIndex = 0;
     offRouteCount = 0;
     wasOffRoute = false;
+    hasArrived = false;
     renderActiveStep();
 
     showStatus("路线规划成功：" + (geo.geocodes[0].formatted_address || address) +
