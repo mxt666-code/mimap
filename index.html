@@ -142,6 +142,29 @@ function updateRouteProgress(position) {
   renderActiveStep();
 }
 
+function distanceToStepEnd(step, position) {
+  const points = stepPoints(step);
+  if (points.length < 2 || !position) return Number(step.distance) || 0;
+  const here = {
+    lon: position.coords.longitude,
+    lat: position.coords.latitude
+  };
+  let nearestIndex = 0;
+  let nearestDistance = Infinity;
+  points.forEach((point, index) => {
+    const distance = metersBetween(here, point);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestIndex = index;
+    }
+  });
+  let remaining = 0;
+  for (let i = nearestIndex; i < points.length - 1; i++) {
+    remaining += metersBetween(points[i], points[i + 1]);
+  }
+  return remaining;
+}
+
 function renderActiveStep() {
   if (!routeSteps.length) return;
   const step = routeSteps[activeStepIndex] || {};
@@ -149,12 +172,17 @@ function renderActiveStep() {
     .reduce((sum, item) => sum + (Number(item.distance) || 0), 0);
   const remainingSeconds = routeSteps.slice(activeStepIndex)
     .reduce((sum, item) => sum + (Number(item.duration) || 0), 0);
+  const turnDistance = distanceToStepEnd(step, currentPosition);
+  const turnDistanceText = turnDistance >= 1000
+    ? (turnDistance / 1000).toFixed(1) + " 公里"
+    : Math.max(0, Math.round(turnDistance / 10) * 10) + " 米";
 
   $("distance").textContent = remainingMeters >= 1000
     ? (remainingMeters / 1000).toFixed(1) + " km"
     : Math.round(remainingMeters) + " m";
   $("arrow").textContent = directionFromStep(step);
-  $("instruction").textContent = step.instruction || "沿路线行驶";
+  $("instruction").textContent = "前方约 " + turnDistanceText + " · " +
+    (step.instruction || "沿路线行驶");
   const eta = new Date(Date.now() + remainingSeconds * 1000);
   $("eta").textContent = eta.toLocaleTimeString("zh-CN", {
     hour: "2-digit", minute: "2-digit"
